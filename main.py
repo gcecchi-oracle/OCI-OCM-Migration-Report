@@ -145,6 +145,8 @@ for idx, migration in enumerate(migrations, 1):
                 "project_name": migration_name,
                 "plan_name": plan_name,
                 "target_asset_name": "",
+                "target_asset_lifecycle_state": "",
+                "excluded_from_migration": "",
                 "user_spec_values": {}
             })
             continue
@@ -172,6 +174,8 @@ for idx, migration in enumerate(migrations, 1):
                 "project_name": migration_name,
                 "plan_name": plan_name,
                 "target_asset_name": asset_name,
+                "target_asset_lifecycle_state": getattr(asset_details, "lifecycle_state", ""),
+                "excluded_from_migration": getattr(asset_details, "is_excluded_from_migration", ""),
                 "user_spec_values": flattened_user_spec
             })
 
@@ -182,7 +186,14 @@ if not table_rows:
 print("Migration Report Table")
 print("")
 ordered_user_spec_columns = sorted(user_spec_columns)
-headers = ["Migration Project Name", "Migration Plan Name", "Target Asset Name"] + ordered_user_spec_columns
+headers = ["Migration Project Name", "Migration Plan Name", "Target Asset Name", "Target Asset Lifecycle State"] + ordered_user_spec_columns
+headers = [
+    "Migration Project Name",
+    "Migration Plan Name",
+    "Target Asset Name",
+    "Target Asset Lifecycle State",
+    "Excluded From Migration"
+] + ordered_user_spec_columns
 print("| " + " | ".join(headers) + " |")
 print("|" + "|".join(["---"] * len(headers)) + "|")
 excel_rows = []
@@ -190,7 +201,9 @@ for row in table_rows:
     row_values = [
         row["project_name"],
         row["plan_name"],
-        row["target_asset_name"]
+        row["target_asset_name"],
+        row["target_asset_lifecycle_state"],
+        row["excluded_from_migration"]
     ]
     for col in ordered_user_spec_columns:
         row_values.append(row["user_spec_values"].get(col, ""))
