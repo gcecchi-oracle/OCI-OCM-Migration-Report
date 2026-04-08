@@ -1,4 +1,5 @@
 import sys
+import json
 import oci
 from openpyxl import Workbook
 
@@ -33,29 +34,6 @@ def _prune_nulls(value):
 def _escape_markdown_cell(value):
     text = str(value) if value is not None else ""
     return text.replace("|", "\\|").replace("\n", "<br>")
-
-
-def _flatten_object(value, prefix="user_spec"):
-    """Flatten dict/list to a single-level dict with dotted/indexed keys."""
-    flat = {}
-
-    if value is None:
-        return flat
-
-    if isinstance(value, dict):
-        for key, nested_value in value.items():
-            next_prefix = f"{prefix}.{key}" if prefix else key
-            flat.update(_flatten_object(nested_value, next_prefix))
-        return flat
-
-    if isinstance(value, list):
-        for idx, nested_value in enumerate(value):
-            next_prefix = f"{prefix}[{idx}]"
-            flat.update(_flatten_object(nested_value, next_prefix))
-        return flat
-
-    flat[prefix] = value
-    return flat
 
 
 # Disable OCI CircuitBreaker feature
@@ -118,7 +96,6 @@ print(f"Found {len(migrations)} migration project(s):")
 print("")
 
 table_rows = []
-user_spec_columns = set()
 
 for idx, migration in enumerate(migrations, 1):
     migration_name = getattr(migration, "display_name", migration.id)
@@ -146,8 +123,9 @@ for idx, migration in enumerate(migrations, 1):
                 "plan_name": plan_name,
                 "target_asset_name": "",
                 "target_asset_lifecycle_state": "",
-                "excluded_from_migration": "",
-                "user_spec_values": {}
+                "excluded_from_execution": "",
+                "recommended_spec_json": "",
+                "user_spec_json": ""
             })
             continue
 
@@ -162,21 +140,28 @@ for idx, migration in enumerate(migrations, 1):
                 continue
 
             user_spec = getattr(asset_details, "user_spec", None)
+            recommended_spec = getattr(asset_details, "recommended_spec", None)
+
             if user_spec is None:
                 non_null_user_spec = None
             else:
                 user_spec_dict = oci.util.to_dict(user_spec)
                 non_null_user_spec = _prune_nulls(user_spec_dict)
-            flattened_user_spec = _flatten_object(non_null_user_spec, "user_spec") if non_null_user_spec else {}
-            user_spec_columns.update(flattened_user_spec.keys())
+
+            if recommended_spec is None:
+                non_null_recommended_spec = None
+            else:
+                recommended_spec_dict = oci.util.to_dict(recommended_spec)
+                non_null_recommended_spec = _prune_nulls(recommended_spec_dict)
 
             table_rows.append({
                 "project_name": migration_name,
                 "plan_name": plan_name,
                 "target_asset_name": asset_name,
                 "target_asset_lifecycle_state": getattr(asset_details, "lifecycle_state", ""),
-                "excluded_from_migration": getattr(asset_details, "is_excluded_from_migration", ""),
-                "user_spec_values": flattened_user_spec
+                "excluded_from_execution": getattr(asset_details, "is_excluded_from_execution", ""),
+                "recommended_spec_json": json.dumps(non_null_recommended_spec, sort_keys=True) if non_null_recommended_spec else "",
+                "user_spec_json": json.dumps(non_null_user_spec, sort_keys=True) if non_null_user_spec else ""
             })
 
 if not table_rows:
@@ -185,15 +170,15 @@ if not table_rows:
 
 print("Migration Report Table")
 print("")
-ordered_user_spec_columns = sorted(user_spec_columns)
-headers = ["Migration Project Name", "Migration Plan Name", "Target Asset Name", "Target Asset Lifecycle State"] + ordered_user_spec_columns
 headers = [
     "Migration Project Name",
     "Migration Plan Name",
     "Target Asset Name",
     "Target Asset Lifecycle State",
-    "Excluded From Migration"
-] + ordered_user_spec_columns
+    "Excluded From Execution",
+    "Recommended Spec (JSON, Non-Null)",
+    "User Spec (JSON, Non-Null)"
+]
 print("| " + " | ".join(headers) + " |")
 print("|" + "|".join(["---"] * len(headers)) + "|")
 excel_rows = []
@@ -203,10 +188,10 @@ for row in table_rows:
         row["plan_name"],
         row["target_asset_name"],
         row["target_asset_lifecycle_state"],
-        row["excluded_from_migration"]
+        row["excluded_from_execution"],
+        row["recommended_spec_json"],
+        row["user_spec_json"]
     ]
-    for col in ordered_user_spec_columns:
-        row_values.append(row["user_spec_values"].get(col, ""))
     excel_rows.append(row_values)
 
     print(
